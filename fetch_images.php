@@ -3,9 +3,9 @@ header('Content-Type: application/json');
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Headers: Authorization, Content-Type");
 
-$servername = "127.0.0.1";
+$servername = "localhost";
 $username = "root";
-$password = "";
+$password = "pelino";
 $dbname = "db_socialmedia";
 
 try {
@@ -17,18 +17,23 @@ try {
 
 
 $sql = "SELECT 
-            uploads.id,
-            uploads.filename,
-            uploads.upload_date,
-            uploads.caption,
-            uploads.userID,
-            tbl_users.firstname,
-            COUNT(tbl_points.point_Id) AS likes
-            FROM uploads
-            INNER JOIN tbl_users ON tbl_users.id = uploads.userID
-            LEFT JOIN tbl_points ON tbl_points.point_postId = uploads.id
-            GROUP BY uploads.id
-            ORDER BY uploads.upload_date DESC
+        uploads.id,
+        uploads.filename,
+        uploads.upload_date,
+        uploads.caption,
+        uploads.userID,
+        tbl_users.firstname,
+        tbl_users.lastname,
+        tbl_users.prof_pic,
+        COUNT(DISTINCT tbl_points.point_Id) AS likes,
+        COUNT(DISTINCT tbl_comment.comment_id) AS countComment
+        FROM uploads
+        INNER JOIN tbl_users ON tbl_users.id = uploads.userID
+        LEFT JOIN tbl_points ON tbl_points.point_postId = uploads.id
+        LEFT JOIN tbl_comment ON tbl_comment.comment_uploadId = uploads.id
+        GROUP BY uploads.id
+        ORDER BY uploads.upload_date DESC
+
         ";
 $stmt = $conn->prepare($sql);
 $stmt->execute();

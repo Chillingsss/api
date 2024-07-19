@@ -106,6 +106,39 @@ class Data
     }
 
 
+    function createPost($json)
+    {
+        include "connection.php";
+        $json = json_decode($json, true);
+        $date = getCurrentDate();
+
+        $returnValueImage = uploadImage();
+        switch ($returnValueImage) {
+            case 2:
+                // You cannot Upload files of this type!
+                return 2;
+            case 3:
+                // There was an error uploading your file!
+                return 3;
+            case 4:
+                // Your file is too big (25mb maximum)
+                return 4;
+            default:
+                break;
+        }
+        $sql = "INSERT INTO uploads( id, caption, post_image, post_dateCreated, post_status) 
+    VALUES(:userId, :title, :description, :image, :date, 0)";
+        $stmt = $conn->prepare($sql);
+        $stmt->bindParam(":userId", $json["userId"]);
+        $stmt->bindParam(":description", $json["caption"]);
+        $stmt->bindParam(":image", $returnValueImage);
+        $stmt->bindParam(":date", $date);
+        $stmt->execute();
+        return $stmt->rowCount() > 0 ? 1 : 0;
+    }
+
+
+
 
     function heartpost($json)
     {
@@ -154,13 +187,21 @@ class Data
         include "connection.php";
         $json = json_decode($json, true);
 
-        $sql = "SELECT a.firstname, b.*, COUNT(c.point_Id) AS likes
-            FROM tbl_users as a
-            INNER JOIN uploads as b ON a.id = b.userID
-            LEFT JOIN tbl_points as c ON c.point_postId = b.id
-            WHERE b.id = :postId
-            GROUP BY b.id
-            ORDER BY b.upload_date DESC";
+        $sql = "SELECT 
+            a.firstname AS post_creator_firstname,
+            b.*,
+            COUNT(c.point_Id) AS likes,
+            GROUP_CONCAT(d.firstname) AS likers_firstnames,
+            GROUP_CONCAT(d.lastname) AS likers_lastnames,
+            GROUP_CONCAT(d.prof_pic) AS likers_profile_pics,
+            GROUP_CONCAT(d.id) AS likers_ids
+        FROM tbl_users AS a
+        INNER JOIN uploads AS b ON a.id = b.userID
+        LEFT JOIN tbl_points AS c ON c.point_postId = b.id
+        LEFT JOIN tbl_users AS d ON c.point_userId = d.id
+        WHERE b.id = :postId
+        GROUP BY b.id
+        ORDER BY b.upload_date DESC";
 
         $stmt = $conn->prepare($sql);
         $stmt->bindParam(":postId", $json["postId"]);
@@ -172,26 +213,53 @@ class Data
 
 
 
+
+
+
+
     function updateDetails($json)
     {
         include "connection.php";
         $json = json_decode($json, true);
 
         try {
+
+            if (isset($_FILES['file']) && !empty($_FILES['file']['name'])) {
+
+                $file = $_FILES['file'];
+                $fileName = $file['name'];
+                $fileTmpName = $file['tmp_name'];
+                $fileError = $file['error'];
+
+
+                if ($fileError !== UPLOAD_ERR_OK) {
+                    throw new Exception("Error uploading profile picture.");
+                }
+
+                $uploadPath = "/var/www/html/api/profPic/" . $fileName;
+                move_uploaded_file($fileTmpName, $uploadPath);
+
+
+                $sql = "UPDATE tbl_users SET prof_pic=:profilePicture WHERE id=:userId";
+                $stmt = $conn->prepare($sql);
+                $stmt->bindParam(":profilePicture", $fileName);
+                $stmt->bindParam(":userId", $json["userId"]);
+                if (!$stmt->execute()) {
+                    throw new Exception("Error updating profile picture in the database.");
+                }
+            }
+
+            // Update other user details
             $sql = "UPDATE tbl_users SET firstname=:updatedFirstname, middlename=:updatedMiddlename, lastname=:updatedLastname, email=:updatedEmail, cpnumber=:updatedCpnumber, username=:updatedUsername, password=:updatedPassword WHERE id=:userId";
-
             $stmt = $conn->prepare($sql);
-
-            // Bind parameters
-            $stmt->bindParam(":updatedFirstname", $json["updated-firstname"]);
-            $stmt->bindParam(":updatedMiddlename", $json["updated-middlename"]);
-            $stmt->bindParam(":updatedLastname", $json["updated-lastname"]);
-            $stmt->bindParam(":updatedEmail", $json["updated-email"]);
-            $stmt->bindParam(":updatedCpnumber", $json["updated-cpnumber"]);
-            $stmt->bindParam(":updatedUsername", $json["updated-username"]);
-            $stmt->bindParam(":updatedPassword", $json["updated-password"]);
+            $stmt->bindParam(":updatedFirstname", $json["updatedFirstname"]);
+            $stmt->bindParam(":updatedMiddlename", $json["updatedMiddlename"]);
+            $stmt->bindParam(":updatedLastname", $json["updatedLastname"]);
+            $stmt->bindParam(":updatedEmail", $json["updatedEmail"]);
+            $stmt->bindParam(":updatedCpnumber", $json["updatedCpnumber"]);
+            $stmt->bindParam(":updatedUsername", $json["updatedUsername"]);
+            $stmt->bindParam(":updatedPassword", $json["updatedPassword"]);
             $stmt->bindParam(":userId", $json["userId"]);
-
             if ($stmt->execute()) {
                 return json_encode(array("status" => 1, "message" => "Details updated successfully"));
             } else {
@@ -212,17 +280,29 @@ class Data
     }
 
 
+
     function getProfile($json)
     {
         include "connection.php";
         $json = json_decode($json, true);
-        $sql = "SELECT a.firstname, b.*, COUNT(c.point_Id) AS likes
-            FROM tbl_users as a
-            INNER JOIN uploads as b ON a.id = b.userID
-            LEFT JOIN tbl_points as c ON c.point_postId = b.id
-            WHERE a.id = :profID
-            GROUP BY b.id
-            ORDER BY b.upload_date DESC";
+        $sql = "SELECT 
+                a.firstname,
+                a.lastname,
+                a.prof_pic, 
+                b.*, 
+                COUNT(DISTINCT c.point_Id) AS likes,
+                COUNT(DISTINCT d.comment_id) AS countComment
+            FROM 
+                tbl_users AS a
+                INNER JOIN uploads AS b ON a.id = b.userID
+                LEFT JOIN tbl_points AS c ON c.point_postId = b.id
+                LEFT JOIN tbl_comment AS d ON d.comment_uploadId = b.id
+            WHERE 
+                a.id = :profID
+            GROUP BY 
+                b.id
+            ORDER BY 
+                b.upload_date DESC";
 
         $stmt = $conn->prepare($sql);
         $stmt->bindParam(":profID", $json["profID"]);
@@ -230,6 +310,7 @@ class Data
 
         return $stmt->rowCount() > 0 ? json_encode($stmt->fetchAll(PDO::FETCH_ASSOC)) : 0;
     }
+
 
 
     function deletePost($json)
@@ -297,10 +378,10 @@ class Data
         include "connection.php";
         $json = json_decode($json, true);
 
-        $sql = "SELECT b.comment_id, b.comment_userID, a.firstname, b.comment_message 
-        FROM tbl_users as a 
-        INNER JOIN tbl_comment as b ON b.comment_userID = a.id 
-        WHERE b.comment_uploadId = :postId";
+        $sql = "SELECT b.comment_id, b.comment_userID, a.firstname, a.prof_pic, b.comment_message, b.comment_date_created 
+            FROM tbl_users as a 
+            INNER JOIN tbl_comment as b ON b.comment_userID = a.id 
+            WHERE b.comment_uploadId = :postId";
 
         $stmt = $conn->prepare($sql);
         $stmt->bindParam(":postId", $json["uploadId"]);
@@ -317,6 +398,45 @@ class Data
         return $returnValue;
     }
 
+    function countComment($json)
+    {
+        include "connection.php";
+        $json = json_decode($json, true);
+
+        $sql = "SELECT 
+            b.comment_id, 
+            b.comment_userID, 
+            GROUP_CONCAT(a.firstname) AS firstnames,
+            GROUP_CONCAT(a.lastname) AS lastnames,
+            GROUP_CONCAT(a.prof_pic) AS prof_pics,
+            b.comment_message, 
+            b.comment_date_created,
+            COUNT(b.comment_id) AS comment_count
+        FROM 
+            tbl_users AS a 
+        INNER JOIN 
+            tbl_comment AS b 
+        ON 
+            b.comment_userID = a.id 
+        WHERE 
+            b.comment_uploadId = :postId
+        GROUP BY
+            b.comment_id";
+
+        $stmt = $conn->prepare($sql);
+        $stmt->bindParam(":postId", $json["uploadId"]);
+        $stmt->execute();
+
+        $comments = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        $returnValue = [
+            'comments' => $comments,
+            'comment_count' => count($comments)
+        ];
+
+        return json_encode($returnValue);
+    }
+
 
     function deleteComment($json)
     {
@@ -327,7 +447,7 @@ class Data
 
         $sql = "DELETE FROM tbl_comment WHERE comment_id = :postId";
         $stmt = $conn->prepare($sql);
-        $stmt->bindParam(':postId', $postId, PDO::PARAM_INT);
+        $stmt->bindParam(':postId', $postId);
 
         $stmt->execute();
         return $stmt->rowCount() > 0 ? 1 : 0;
@@ -338,23 +458,47 @@ class Data
         include "connection.php";
         $json = json_decode($json, true);
 
-        $sql = "UPDATE tbl_comment SET comment_message=:updatedComment WHERE comment_id=:comment_id";
+        try {
+            $sql = "UPDATE tbl_comment SET comment_message=:updatedComment WHERE comment_id=:comment_id";
+            $stmt = $conn->prepare($sql);
+            $stmt->bindParam(":updatedComment", $json["updatedComment"]);
+            $stmt->bindParam(":comment_id", $json["comment_id"]);
+            $stmt->execute();
 
-        $stmt = $conn->prepare($sql);
-
-        $stmt->bindParam(":updatedComment", $json["updatedComment"]);
-
-        $stmt->bindParam(":comment_id", $json["comment_id"]);
-        $stmt->execute();
-        if ($stmt->rowCount() > 0) {
-            return json_encode(array("status" => 1, "message" => "Comment updated successfully"));
-        } else {
-            throw new Exception("Error executing SQL statement.");
+            if ($stmt->rowCount() > 0) {
+                return json_encode(array("status" => 1, "message" => "Comment updated successfully"));
+            } else {
+                return json_encode(array("status" => 0, "message" => "No changes made to the comment"));
+            }
+        } catch (PDOException $e) {
+            return json_encode(array("status" => 0, "message" => "Error executing SQL statement: " . $e->getMessage()));
+        } finally {
+            $stmt = null;
+            $conn = null;
         }
-
-        $stmt = null;
-        $conn = null;
     }
+
+
+    // function chat($json)
+    // {
+    //     include "connection.php";
+    //     $json = json_decode($json, true);
+
+    //     $userId = $json["userId"];
+    //     $chat_message = $json["chat_message"];
+    //     $usersID = $json["usersID"];
+
+    //     $sql = "INSERT INTO tbl_chat (chat_userID, chat_message, chat_usersID, chat_date_created)
+    //         VALUES (:userId, :chat_message, :usersID, NOW())";
+
+    //     $stmt = $conn->prepare($sql);
+    //     $stmt->bindParam(":chat_message", $chat_message);
+    //     $stmt->bindParam(":userId", $userId);
+    //     $stmt->bindParam(":usersID", $usersID);
+    //     $stmt->execute();
+
+    //     return $stmt->rowCount() > 0 ? 1 : 0;
+    // }
 
     function chat($json)
     {
@@ -365,18 +509,149 @@ class Data
         $chat_message = $json["chat_message"];
         $usersID = $json["usersID"];
 
+        try {
+            $sql = "INSERT INTO tbl_message (chat_userID,  chat_usersID, chat_message, chat_date_created)
+                VALUES (:userId, :usersID, :chat_message, NOW())";
 
-        $sql = "INSERT INTO tbl_chat (chat_userID, chat_message, chat_usersID, chat_date_created)
-            VALUES (:userId, :chat_message, :usersID, NOW())";
+            $stmt = $conn->prepare($sql);
 
-        $stmt = $conn->prepare($sql);
-        $stmt->bindParam(":chat_message", $chat_message);
-        $stmt->bindParam(":userId", $userId);
-        $stmt->bindParam(":usersID", $usersID);
-        $stmt->execute();
+            $stmt->bindParam(":userId", $userId);
+            $stmt->bindParam(":usersID", $usersID);
+            $stmt->bindParam(":chat_message", $chat_message);
+            $stmt->execute();
 
-        return $stmt->rowCount() > 0 ? 1 : 0;
+            if ($stmt->rowCount() > 0) {
+                return json_encode(["status" => 1, "message" => "Message sent successfully."]);
+            } else {
+                return json_encode(["status" => 0, "message" => "Failed to send message."]);
+            }
+        } catch (PDOException $e) {
+            return json_encode(["status" => -1, "message" => "Database error: " . $e->getMessage()]);
+        } catch (Exception $e) {
+            return json_encode(["status" => -1, "message" => "General error: " . $e->getMessage()]);
+        }
     }
+
+
+    // function getMessages($json)
+    // {
+    //     include "connection.php";
+    //     $json = json_decode($json, true);
+
+    //     $sql = "SELECT m.chat_message, m.chat_userID, u.firstname, u.lastname, u.prof_pic, m.chat_date_created 
+    //         FROM tbl_message as m 
+    //         INNER JOIN tbl_users as u ON m.chat_userID = u.id 
+    //         WHERE (m.chat_usersID = :userID1 AND m.chat_userID = :userID2) 
+    //         OR (m.chat_usersID = :userID2 AND m.chat_userID = :userID1)
+    //         ORDER BY m.chat_date_created";
+
+    //     $stmt = $conn->prepare($sql);
+    //     $stmt->bindParam(":userID1", $json["userId"]);
+    //     $stmt->bindParam(":userID2", $json["usersID"]);
+
+    //     $stmt->execute();
+
+    //     $returnValue = 0;
+
+    //     if ($stmt->rowCount() > 0) {
+    //         $rs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    //         $returnValue = json_encode($rs);
+    //     }
+
+    //     return $returnValue;
+    // }
+
+    function getMessages($json)
+    {
+        include "connection.php";
+        $json = json_decode($json, true);
+
+        try {
+            $sql = "SELECT m.chat_message, m.chat_userID, u.firstname, u.lastname, u.prof_pic, m.chat_date_created 
+            FROM tbl_message as m 
+            INNER JOIN tbl_users as u ON m.chat_userID = u.id 
+            WHERE (m.chat_usersID = :userID1 AND m.chat_userID = :userID2) 
+            OR (m.chat_usersID = :userID2 AND m.chat_userID = :userID1)
+            ORDER BY m.chat_date_created";
+
+            $stmt = $conn->prepare($sql);
+            $stmt->bindParam(":userID1", $json["userId"]);
+            $stmt->bindParam(":userID2", $json["usersID"]);
+
+            $stmt->execute();
+
+            $returnValue = ["status" => -1, "message" => "No messages found."];
+
+            if ($stmt->rowCount() > 0) {
+                $rs = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                $returnValue = ["status" => 1, "messages" => $rs];
+            }
+        } catch (Exception $e) {
+            $returnValue = ["status" => -1, "message" => "Database error: " . $e->getMessage()];
+        }
+
+        return json_encode($returnValue);
+    }
+}
+
+
+function uploadImage()
+{
+    if (isset($_FILES["file"])) {
+        $file = $_FILES['file'];
+        // print_r($file);
+        $fileName = $_FILES['file']['name'];
+        $fileTmpName = $_FILES['file']['tmp_name'];
+        $fileSize = $_FILES['file']['size'];
+        $fileError = $_FILES['file']['error'];
+        // $fileType = $_FILES['file']['type'];
+
+        $fileExt = explode(".", $fileName);
+        $fileActualExt = strtolower(end($fileExt));
+
+        $allowed = ["jpg", "jpeg", "png", "gif"];
+
+        if (in_array($fileActualExt, $allowed)) {
+            if ($fileError === 0) {
+                if ($fileSize < 25000000) {
+                    $fileNameNew = uniqid("", true) . "." . $fileActualExt;
+                    $fileDestination = 'images/' . $fileNameNew;
+                    move_uploaded_file($fileTmpName, $fileDestination);
+                    return $fileNameNew;
+                } else {
+                    return 4;
+                }
+            } else {
+                return 3;
+            }
+        } else {
+            return 2;
+        }
+    } else {
+        return "";
+    }
+
+    // $returnValueImage = uploadImage();
+
+    // switch ($returnValueImage) {
+    //     case 2:
+    //         // You cannot Upload files of this type!
+    //         return 2;
+    //     case 3:
+    //         // There was an error uploading your file!
+    //         return 3;
+    //     case 4:
+    //         // Your file is too big (25mb maximum)
+    //         return 4;
+    //     default:
+    //         break;
+    // }
+}
+
+function getCurrentDate()
+{
+    $today = new DateTime("now", new DateTimeZone('Asia/Manila'));
+    return $today->format('Y-m-d H:i:s');
 }
 
 function recordExists($value, $table, $column)
@@ -389,6 +664,7 @@ function recordExists($value, $table, $column)
     $count = $stmt->fetchColumn();
     return $count > 0;
 }
+
 
 $operation = isset($_POST["operation"]) ? $_POST["operation"] : "Invalid";
 $json = isset($_POST["json"]) ? $_POST["json"] : "";
@@ -411,7 +687,7 @@ switch ($operation) {
         echo $data->getProfile($json);
         break;
     case "deletePost":
-        echo $data->deletePost($json); // Call the deletePost function
+        echo $data->deletePost($json);
         break;
     case "commentPost":
         echo $data->commentPost($json);
@@ -436,6 +712,15 @@ switch ($operation) {
         break;
     case "signup":
         echo $data->signup($json);
+        break;
+    case "createPost":
+        echo $data->createPost($json);
+        break;
+    case "countComment":
+        echo $data->countComment($json);
+        break;
+    case "getMessages";
+        echo $data->getMessages($json);
         break;
     default:
         echo json_encode(array("status" => -1, "message" => "Invalid operation."));

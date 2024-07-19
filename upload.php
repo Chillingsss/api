@@ -1,7 +1,9 @@
 <?php
 header('Content-Type: application/json');
+header("Access-Control-Allow-Origin: *");
+header("Access-Control-Allow-Headers: Authorization, Content-Type");
 
-$servername = "127.0.0.1";
+$servername = "localhost";
 $username = "root";
 $password = "pelino";
 $dbname = "db_socialmedia";
@@ -14,7 +16,7 @@ try {
     exit;
 }
 
-// Check if file data is received
+
 if (!empty($_FILES['file']['tmp_name']) && is_uploaded_file($_FILES['file']['tmp_name'])) {
     $fileName = $_FILES['file']['name'];
     $fileTmpName = $_FILES['file']['tmp_name'];
@@ -26,7 +28,6 @@ if (!empty($_FILES['file']['tmp_name']) && is_uploaded_file($_FILES['file']['tmp
 
     $userID = isset($_POST['userID']) ? $_POST['userID'] : '';
 
-    // Process file upload
     $fileExt = explode('.', $fileName);
     $fileActualExt = strtolower(end($fileExt));
 
@@ -38,6 +39,8 @@ if (!empty($_FILES['file']['tmp_name']) && is_uploaded_file($_FILES['file']['tmp
                 $fileNameNew = uniqid('', true) . "." . $fileActualExt;
                 // $fileDestination = 'uploads/' . $fileNameNew;
                 $fileDestination = '/var/www/html/sync/uploads/' . $fileNameNew;
+                // $fileDestination = './../sync/uploads/' . $fileNameNew;
+
                 if (move_uploaded_file($fileTmpName, $fileDestination)) {
                     $sql = "INSERT INTO uploads (filename, caption, userID) VALUES (:filename, :caption, :userID)";
                     $stmt = $conn->prepare($sql);
@@ -63,7 +66,7 @@ if (!empty($_FILES['file']['tmp_name']) && is_uploaded_file($_FILES['file']['tmp
         echo json_encode(["error" => "You cannot upload files of this type!"]);
     }
 } else {
-    // No file uploaded, handle data without file
+
     $caption = isset($_POST['caption']) ? $_POST['caption'] : '';
 
     $userID = isset($_POST['userID']) ? $_POST['userID'] : '';
