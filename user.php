@@ -592,6 +592,31 @@ class Data
 
         return json_encode($returnValue);
     }
+
+    function editMessage($json)
+    {
+        include "connection.php";
+        $json = json_decode($json, true);
+
+        try {
+            $sql = "UPDATE tbl_message SET chat_message=:updatedMessage WHERE chat_id=:chat_id";
+            $stmt = $conn->prepare($sql);
+            $stmt->bindParam(":updatedMessage", $json["message"]);
+            $stmt->bindParam(":chat_id", $json["messageId"]);
+            $stmt->execute();
+
+            if ($stmt->rowCount() > 0) {
+                return json_encode(array("status" => 1, "message" => "Comment updated successfully"));
+            } else {
+                return json_encode(array("status" => 0, "message" => "No changes made to the comment"));
+            }
+        } catch (PDOException $e) {
+            return json_encode(array("status" => 0, "message" => "Error executing SQL statement: " . $e->getMessage()));
+        } finally {
+            $stmt = null;
+            $conn = null;
+        }
+    }
 }
 
 
@@ -721,6 +746,9 @@ switch ($operation) {
         break;
     case "getMessages";
         echo $data->getMessages($json);
+        break;
+    case "editMessage";
+        echo $data->editMessage($json);
         break;
     default:
         echo json_encode(array("status" => -1, "message" => "Invalid operation."));
