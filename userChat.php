@@ -13,8 +13,9 @@ try {
     $conn = new PDO("mysql:host=$servername;dbname=$database", $username, $password);
     $conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
 
-    // Simulate logged-in user (replace with actual logged-in user ID or session handling)
-    $loggedInUserId = 1;
+    // Get the logged-in user's ID from the request
+    $data = json_decode(file_get_contents("php://input"), true);
+    $loggedInUserId = isset($data['userId']) ? $data['userId'] : 0;
 
     // SQL query to fetch all users except the logged-in user
     $sql = "SELECT id, firstname, lastname, prof_pic FROM tbl_users WHERE id != :loggedInUserId";
@@ -23,8 +24,7 @@ try {
     $stmt->execute();
 
     $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    echo json_encode($users); // Output JSON response
-
+    echo json_encode($users);
 } catch (PDOException $e) {
     echo json_encode(array('error' => 'Database error: ' . $e->getMessage()));
 }

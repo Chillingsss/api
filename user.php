@@ -567,7 +567,7 @@ class Data
         $json = json_decode($json, true);
 
         try {
-            $sql = "SELECT m.chat_message, m.chat_userID, u.firstname, u.lastname, u.prof_pic, m.chat_date_created 
+            $sql = "SELECT m.chat_id, m.chat_message, m.chat_userID, u.firstname, u.lastname, u.prof_pic, m.chat_date_created 
             FROM tbl_message as m 
             INNER JOIN tbl_users as u ON m.chat_userID = u.id 
             WHERE (m.chat_usersID = :userID1 AND m.chat_userID = :userID2) 
@@ -605,6 +605,11 @@ class Data
             $stmt->bindParam(":chat_id", $json["messageId"]);
             $stmt->execute();
 
+            // Debugging logs
+            error_log("SQL: " . $sql);
+            error_log("Message: " . $json["message"]);
+            error_log("Chat ID: " . $json["messageId"]);
+
             if ($stmt->rowCount() > 0) {
                 return json_encode(array("status" => 1, "message" => "Comment updated successfully"));
             } else {
@@ -616,6 +621,21 @@ class Data
             $stmt = null;
             $conn = null;
         }
+    }
+
+    function deleteMessage($json)
+    {
+        include "connection.php";
+        $json = json_decode($json, true);
+
+        $messageId = $json['chat_id'];
+
+        $sql = "DELETE FROM tbl_message WHERE chat_id = :messageId";
+        $stmt = $conn->prepare($sql);
+        $stmt->bindParam(':messageId', $messageId);
+
+        $stmt->execute();
+        return $stmt->rowCount() > 0 ? 1 : 0;
     }
 }
 
@@ -749,6 +769,9 @@ switch ($operation) {
         break;
     case "editMessage";
         echo $data->editMessage($json);
+        break;
+    case "deleteMessage";
+        echo $data->deleteMessage($json);
         break;
     default:
         echo json_encode(array("status" => -1, "message" => "Invalid operation."));
