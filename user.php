@@ -140,43 +140,102 @@ class Data
 
 
 
+    // function heartpost($json)
+    // {
+    //     include "connection.php";
+    //     $json = json_decode($json, true);
+
+    //     // Retrieve post and user IDs from the request
+    //     $postId = $json['postId'];
+    //     $userId = $json['userId'];
+
+    //     try {
+    //         $sqlCheckLiked = "SELECT * FROM tbl_points WHERE point_postId = :postId AND point_userId = :userId";
+    //         $stmtCheckLiked = $conn->prepare($sqlCheckLiked);
+    //         $stmtCheckLiked->bindParam(":postId", $postId);
+    //         $stmtCheckLiked->bindParam(":userId", $userId);
+    //         $stmtCheckLiked->execute();
+
+    //         if ($stmtCheckLiked->rowCount() > 0) {
+    //             $sqlUnlike = "DELETE FROM tbl_points WHERE point_postId = :postId AND point_userId = :userId";
+    //             $stmtUnlike = $conn->prepare($sqlUnlike);
+    //             $stmtUnlike->bindParam(":postId", $postId);
+    //             $stmtUnlike->bindParam(":userId", $userId);
+    //             $stmtUnlike->execute();
+    //             return -5;
+    //         } else {
+    //             $sqlLike = "INSERT INTO tbl_points (point_postId, point_userId) VALUES (:postId, :userId)";
+    //             $stmtLike = $conn->prepare($sqlLike);
+    //             $stmtLike->bindParam(":postId", $postId);
+    //             $stmtLike->bindParam(":userId", $userId);
+    //             $stmtLike->execute();
+    //         }
+
+    //         return $stmtLike->rowCount() > 0 || $stmtUnlike->rowCount() > 0 ? 1 : 0;
+    //     } catch (PDOException $e) {
+    //         error_log("Error in heartpost function: " . $e->getMessage(), 0);
+    //         return 0;
+    //     }
+    // }
+
     function heartpost($json)
     {
         include "connection.php";
         $json = json_decode($json, true);
 
-        // Retrieve post and user IDs from the request
         $postId = $json['postId'];
         $userId = $json['userId'];
+        $reaction = $json['reaction'];
 
         try {
-            $sqlCheckLiked = "SELECT * FROM tbl_points WHERE point_postId = :postId AND point_userId = :userId";
-            $stmtCheckLiked = $conn->prepare($sqlCheckLiked);
-            $stmtCheckLiked->bindParam(":postId", $postId);
-            $stmtCheckLiked->bindParam(":userId", $userId);
-            $stmtCheckLiked->execute();
+            // Check if the user already reacted
+            $sqlCheckReaction = "SELECT * FROM tbl_points WHERE point_postId = :postId AND point_userId = :userId";
+            $stmtCheckReaction = $conn->prepare($sqlCheckReaction);
+            $stmtCheckReaction->bindParam(":postId", $postId);
+            $stmtCheckReaction->bindParam(":userId", $userId);
+            $stmtCheckReaction->execute();
 
-            if ($stmtCheckLiked->rowCount() > 0) {
-                $sqlUnlike = "DELETE FROM tbl_points WHERE point_postId = :postId AND point_userId = :userId";
-                $stmtUnlike = $conn->prepare($sqlUnlike);
-                $stmtUnlike->bindParam(":postId", $postId);
-                $stmtUnlike->bindParam(":userId", $userId);
-                $stmtUnlike->execute();
-                return -5;
+            if ($stmtCheckReaction->rowCount() > 0) {
+                if ($reaction === 'remove') {
+
+                    $sqlRemoveReaction = "DELETE FROM tbl_points WHERE point_postId = :postId AND point_userId = :userId";
+                    $stmtRemoveReaction = $conn->prepare($sqlRemoveReaction);
+                    $stmtRemoveReaction->bindParam(":postId", $postId);
+                    $stmtRemoveReaction->bindParam(":userId", $userId);
+                    $stmtRemoveReaction->execute();
+
+                    return -5;
+                } else {
+
+                    $sqlUpdateReaction = "UPDATE tbl_points SET point_reaction = :reaction WHERE point_postId = :postId AND point_userId = :userId";
+                    $stmtUpdateReaction = $conn->prepare($sqlUpdateReaction);
+                    $stmtUpdateReaction->bindParam(":postId", $postId);
+                    $stmtUpdateReaction->bindParam(":userId", $userId);
+                    $stmtUpdateReaction->bindParam(":reaction", $reaction);
+                    $stmtUpdateReaction->execute();
+
+                    return 2;
+                }
             } else {
-                $sqlLike = "INSERT INTO tbl_points (point_postId, point_userId) VALUES (:postId, :userId)";
-                $stmtLike = $conn->prepare($sqlLike);
-                $stmtLike->bindParam(":postId", $postId);
-                $stmtLike->bindParam(":userId", $userId);
-                $stmtLike->execute();
-            }
 
-            return $stmtLike->rowCount() > 0 || $stmtUnlike->rowCount() > 0 ? 1 : 0;
+                $sqlAddReaction = "INSERT INTO tbl_points (point_postId, point_userId, point_reaction) VALUES (:postId, :userId, :reaction)";
+                $stmtAddReaction = $conn->prepare($sqlAddReaction);
+                $stmtAddReaction->bindParam(":postId", $postId);
+                $stmtAddReaction->bindParam(":userId", $userId);
+                $stmtAddReaction->bindParam(":reaction", $reaction);
+                $stmtAddReaction->execute();
+
+                return 1;
+            }
         } catch (PDOException $e) {
             error_log("Error in heartpost function: " . $e->getMessage(), 0);
             return 0;
         }
     }
+
+
+
+
 
 
 
@@ -188,13 +247,14 @@ class Data
         $json = json_decode($json, true);
 
         $sql = "SELECT 
-            a.firstname AS post_creator_firstname,
-            b.*,
-            COUNT(c.point_Id) AS likes,
-            GROUP_CONCAT(d.firstname) AS likers_firstnames,
-            GROUP_CONCAT(d.lastname) AS likers_lastnames,
-            GROUP_CONCAT(d.prof_pic) AS likers_profile_pics,
-            GROUP_CONCAT(d.id) AS likers_ids
+        a.firstname AS post_creator_firstname,
+        b.*,
+        COUNT(c.point_Id) AS likes,
+        GROUP_CONCAT(d.firstname) AS likers_firstnames,
+        GROUP_CONCAT(d.lastname) AS likers_lastnames,
+        GROUP_CONCAT(d.prof_pic) AS likers_profile_pics,
+        GROUP_CONCAT(d.id) AS likers_ids,
+        GROUP_CONCAT(c.point_reaction) AS likers_reactions
         FROM tbl_users AS a
         INNER JOIN uploads AS b ON a.id = b.userID
         LEFT JOIN tbl_points AS c ON c.point_postId = b.id
@@ -210,6 +270,28 @@ class Data
         return $stmt->rowCount() > 0 ? json_encode($stmt->fetchAll(PDO::FETCH_ASSOC)) : 0;
     }
 
+
+    function isUserReaction($json)
+    {
+        include "connection.php";
+        $json = json_decode($json, true);
+
+        $postId = $json['postId'];
+        $userId = $json['userId'];
+
+        $sql = "SELECT point_reaction FROM tbl_points WHERE point_postId = :postId AND point_userId = :userId";
+        $stmt = $conn->prepare($sql);
+        $stmt->bindParam(":postId", $postId);
+        $stmt->bindParam(":userId", $userId);
+        $stmt->execute();
+
+        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+        if ($row) {
+            return json_encode(['reaction' => $row['point_reaction']]);
+        } else {
+            return json_encode(['reaction' => null]);
+        }
+    }
 
 
 
@@ -772,6 +854,9 @@ switch ($operation) {
         break;
     case "deleteMessage";
         echo $data->deleteMessage($json);
+        break;
+    case "isUserReaction";
+        echo $data->isUserReaction($json);
         break;
     default:
         echo json_encode(array("status" => -1, "message" => "Invalid operation."));
